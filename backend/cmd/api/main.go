@@ -22,7 +22,7 @@ func main() {
 	}
 
 	dataStore := store.New(db)
-	handler := httpapi.New(dataStore, cfg.JWTSecret, cfg.JWTExpiry)
+	handler := httpapi.New(dataStore, cfg.JWTSecret, cfg.JWTExpiry, cfg.CORSOrigin)
 
 	log.Println("server running on", cfg.HTTPAddr)
 	log.Fatal(http.ListenAndServe(cfg.HTTPAddr, handler))

@@ -17,23 +17,25 @@ import (
 )
 
 type API struct {
-	store     *store.Store
-	jwtSecret string
-	jwtExpiry time.Duration
+	store      *store.Store
+	jwtSecret  string
+	jwtExpiry  time.Duration
+	corsOrigin string
 }
 
-func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration) http.Handler {
-	api := &API{store: dataStore, jwtSecret: jwtSecret, jwtExpiry: jwtExpiry}
+func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration, corsOrigin string) http.Handler {
+	api := &API{store: dataStore, jwtSecret: jwtSecret, jwtExpiry: jwtExpiry, corsOrigin: corsOrigin}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", api.register)
 	mux.HandleFunc("POST /api/auth/login", api.login)
+	mux.Handle("GET /api/me", api.requireAuth(http.HandlerFunc(api.me)))
 	mux.Handle("POST /api/leaves", api.requireAuth(http.HandlerFunc(api.createLeave)))
 	mux.Handle("GET /api/leaves/my", api.requireAuth(http.HandlerFunc(api.myLeaves)))
 	mux.Handle("GET /api/admin/leaves", api.requireAuth(http.HandlerFunc(api.adminLeaves)))
 	mux.Handle("PATCH /api/admin/leaves/{id}/approve", api.requireAuth(http.HandlerFunc(api.approveLeave)))
 	mux.Handle("PATCH /api/admin/leaves/{id}/reject", api.requireAuth(http.HandlerFunc(api.rejectLeave)))
 	mux.Handle("GET /api/admin/dashboard", api.requireAuth(http.HandlerFunc(api.adminDashboard)))
-	return mux
+	return api.cors(mux)
 }
 
 func (api *API) register(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +125,27 @@ func (api *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": user})
+}
+
+func (api *API) me(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(userIDKey).(int64)
+	if !ok || userID <= 0 {
+		writeError(w, http.StatusUnauthorized, "invalid user")
+		return
+	}
+
+	user, err := api.store.UserByID(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "user not found")
+			return
+		}
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "could not fetch user")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, user)
 }
 
 func (api *API) createLeave(w http.ResponseWriter, r *http.Request) {

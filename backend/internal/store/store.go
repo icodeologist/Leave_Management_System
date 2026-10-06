@@ -41,6 +41,15 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (model.User, erro
 	return user, err
 }
 
+func (s *Store) UserByID(ctx context.Context, userID int64) (model.User, error) {
+	var user model.User
+	err := s.db.WithContext(ctx).First(&user, userID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return user, ErrNotFound
+	}
+	return user, err
+}
+
 func (s *Store) CreateUser(ctx context.Context, user *model.User) error {
 	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
 	err := s.db.WithContext(ctx).Create(user).Error
