@@ -1,212 +1,119 @@
 # Leave Management System
 
-Leave Management System is a small full-stack application for submitting, reviewing, and tracking employee leave. It has a Go API, a PostgreSQL database, and a React frontend.
+A simple leave request system with a React frontend and Go/PostgreSQL backend.
 
-The project deliberately keeps the architecture simple:
-
-- `backend/` contains the Go API, GORM models, database setup, authentication, and Dockerfile.
-- `frontend/` contains the React/Vite application.
-- The backend creates the required tables with GORM when it starts. There is no separate migration command.
+**Requirements document:** [docs/BRD.md](docs/BRD.md)
 
 ## Features
 
-Employees can register, sign in, see their leave balance, submit leave requests, and view their request history. A request can be annual, casual, or sick leave, and can be either a full day or a half day.
+- Employee and admin registration/login with JWT and bcrypt.
+- Employees see their balance, submit annual/casual/sick leave, choose full or half day, and view history.
+- Admins view requests, filter by status, and approve or reject pending requests.
+- Employee balance starts at 20 days and is deducted only after approval.
+- Leave balance validation and overlapping-date validation.
+- Public `/api/health` endpoint for Render.
 
-Admins can sign in to a separate dashboard, view employee requests, filter them by status, and approve or reject pending requests. The API checks the employee’s balance and deducts leave only after approval. Approval and deduction happen in the same database transaction.
+## Data consistency
 
-The API uses JWTs for authentication and bcrypt for password hashing. Employee and admin access is enforced by the JWT role claim and backend middleware.
+Approval uses one PostgreSQL transaction. The leave request row and employee row are locked while approval is checked and written. This prevents two admins from approving the same request or deducting the same employee balance twice. Admins can still view the dashboard at the same time; only conflicting updates are serialized.
 
-## API Reference
+The backend handles CORS `OPTIONS` preflight requests before authentication and returns the required headers with a `204` response.
 
-| Method | Endpoint | Who can use it |
-| --- | --- | --- |
-| `GET` | `/api/health` | Anyone |
-| `POST` | `/api/auth/register` | Anyone |
-| `POST` | `/api/auth/login` | Anyone |
-| `GET` | `/api/me` | Signed-in users |
-| `POST` | `/api/leaves` | Employees |
-| `GET` | `/api/leaves/my` | Employees |
-| `GET` | `/api/admin/leaves` | Admins |
-| `PATCH` | `/api/admin/leaves/:id/approve` | Admins |
-| `PATCH` | `/api/admin/leaves/:id/reject` | Admins |
-| `GET` | `/api/admin/dashboard` | Admins |
+## Stack
 
-Protected requests must include:
+- Frontend: React, Vite, JavaScript, Tailwind CSS
+- Backend: Go REST API, GORM, PostgreSQL
+- Deployment: Vercel frontend, Render Docker backend and PostgreSQL
 
-```text
-Authorization: Bearer <jwt>
-```
+## Run locally
 
-## Run Locally
+Requirements: Go 1.23+, PostgreSQL, Node.js, and npm.
 
-### Requirements
-
-- Go 1.23 or newer
-- PostgreSQL
-- Node.js and npm
-
-### 1. Create the backend environment file
-
-From the repository root:
-
-```bash
+`bash
 cp backend/.env.example backend/.env
-```
-
-Open `backend/.env` and set a real local PostgreSQL connection and a JWT secret with at least 32 characters. `DATABASE_URL` and `JWT_SECRET` are required. The API uses port `8080` by default.
-
-### 2. Start the backend
-
-```bash
 cd backend
 go run ./cmd/api
-```
-
-The first startup connects to PostgreSQL and creates or updates the `users` and `leave_requests` tables through GORM.
-
-Check that it is running:
-
-```bash
-curl http://localhost:8080/api/health
-```
-
-Expected response:
-
-```json
-{"status":"ok"}
-```
-
-### 3. Start the frontend
+`
 
 Create `frontend/.env.local`:
 
-```env
+`env
 VITE_API_URL=http://localhost:8080
-```
+`
 
 Then run:
 
-```bash
+`bash
 cd frontend
 npm install
 npm run dev
-```
+`
 
-Open the Vite URL shown in the terminal, normally `http://localhost:5173`.
+GORM creates the required tables on backend startup.
 
-## Run with Docker
-
-The Docker build context is `backend/`. Build and run it from that directory:
-
-```bash
-cd backend
-docker build -t leave-backend .
-docker run --rm -p 8081:8080 --env-file .env leave-backend
-```
-
-The container reads configuration from environment variables. It uses `PORT` when it is provided and falls back to `8080` for local runs.
-
-## Deploy the Backend
-
-The repository is already arranged for a Docker deployment:
-
-1. Create a Render PostgreSQL database.
-2. Create a Render Web Service connected to this repository.
-3. Set the service Root Directory to `backend`.
-4. Select Docker as the runtime and use `./Dockerfile`.
-5. Add the environment variables below.
-6. Set the health check path to `/api/health`.
-
-Set these variables in Render:
-
-```env
-DATABASE_URL=<Render PostgreSQL internal connection URL>
-JWT_SECRET=<random secret with at least 32 characters>
-JWT_EXPIRY=24h
-ALLOWED_ORIGIN=https://leave-management-system-git-main-denz18.vercel.app
-```
-
-Render supplies `PORT` automatically. Do not hardcode it in Render.
-
-The backend fails at startup if `DATABASE_URL` or `JWT_SECRET` is missing. Once the service is live, check:
-
-```bash
-curl https://leave-management-api-xh4m.onrender.com/api/health
-```
-
-## Deploy the Frontend
-
-Set the frontend build variable to the public Render API URL:
-
-```env
-VITE_API_URL=https://leave-management-api-xh4m.onrender.com
-```
-
-For the current deployment, the API URL is:
-
-```env
-VITE_API_URL=https://leave-management-api-xh4m.onrender.com
-```
-
-The value of `ALLOWED_ORIGIN` on Render must exactly match the URL in the browser address bar. For example, these are different origins:
-
-```text
-https://leave-management-system-denz18.vercel.app
-https://leave-management-system-git-main-denz18.vercel.app
-```
-
-Use one exact origin, without a trailing slash. If you move between Vercel preview and production URLs, update `ALLOWED_ORIGIN` and redeploy the backend.
-
-## Troubleshoot CORS
-
-The backend handles `OPTIONS` preflight requests before authentication and returns `204` with the CORS headers for the configured origin.
-
-If the browser says that `Access-Control-Allow-Origin` is missing:
-
-1. Look at the browser error and copy the exact value after `origin`.
-2. Set that exact value as Render’s `ALLOWED_ORIGIN`.
-3. Remove any old `CORS_ORIGIN` variable from Render.
-4. Save the environment variable and redeploy the backend.
-5. Confirm that `VITE_API_URL` points to the Render API, not `localhost`.
-
-You can test a preflight request yourself:
-
-```bash
-curl -i -X OPTIONS \
-  https://leave-management-api-xh4m.onrender.com/api/auth/login \
-  -H "Origin: https://leave-management-system-git-main-denz18.vercel.app" \
-  -H "Access-Control-Request-Method: POST" \
-  -H "Access-Control-Request-Headers: content-type"
-```
-
-The response should be `204` and include:
-
-```text
-Access-Control-Allow-Origin: https://leave-management-system-git-main-denz18.vercel.app
-Access-Control-Allow-Methods: GET, POST, PATCH, OPTIONS
-Access-Control-Allow-Headers: Authorization, Content-Type
-```
-
-## Live URLs
-
-Frontend:
-
-```text
-https://leave-management-system-git-main-denz18.vercel.app
-```
+## Environment variables
 
 Backend:
 
-```text
-https://leave-management-api-xh4m.onrender.com
-```
+`env
+DATABASE_URL=<PostgreSQL connection URL>
+JWT_SECRET=<at least 32 characters>
+JWT_EXPIRY=24h
+ALLOWED_ORIGIN=<exact frontend origin>
+`
 
-Health check:
+Render supplies ` PORT `; local runs default to `8080`.
 
-```text
-https://leave-management-api-xh4m.onrender.com/api/health
-```
+Frontend:
 
-## Project Documentation
+`env
+VITE_API_URL=<backend URL>
+`
 
-The full requirements are documented in [`docs/BRD.md`](docs/BRD.md). Keeping the BRD in the repository means the requirements are versioned with the code and easy to review on GitHub.
+## API
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| GET | `/api/health` | Public |
+| POST | `/api/auth/register` | Public |
+| POST | `/api/auth/login` | Public |
+| GET | `/api/me` | Authenticated |
+| POST | `/api/leaves` | Employee |
+| GET | `/api/leaves/my` | Employee |
+| GET | `/api/admin/leaves` | Admin |
+| PATCH | `/api/admin/leaves/:id/approve` | Admin |
+| PATCH | `/api/admin/leaves/:id/reject` | Admin |
+| GET | `/api/admin/dashboard` | Admin |
+
+## Deploy
+
+### Render backend
+
+Set the service root directory to `backend`, use `./Dockerfile`, and configure:
+
+`env
+DATABASE_URL=<Render PostgreSQL internal URL>
+JWT_SECRET=<production secret>
+JWT_EXPIRY=24h
+ALLOWED_ORIGIN=https://leave-management-system-git-main-denz18.vercel.app
+`
+
+Health check path:
+
+`/api/health`
+
+### Vercel frontend
+
+Set:
+
+`env
+VITE_API_URL=https://leave-management-api-xh4m.onrender.com
+`
+
+Live URLs:
+
+- Frontend: https://leave-management-system-git-main-denz18.vercel.app/
+- Backend: https://leave-management-api-xh4m.onrender.com
+- Health: https://leave-management-api-xh4m.onrender.com/api/health
+
+For CORS, `ALLOWED_ORIGIN` must exactly match the browser origin, without a trailing slash. See [docs/BRD.md](docs/BRD.md) for the short business requirements.
