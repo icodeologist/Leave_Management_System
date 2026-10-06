@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,8 @@ func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration) http
 	mux.Handle("POST /api/leaves", api.requireAuth(http.HandlerFunc(api.createLeave)))
 	mux.Handle("GET /api/leaves/my", api.requireAuth(http.HandlerFunc(api.myLeaves)))
 	mux.Handle("GET /api/admin/leaves", api.requireAuth(http.HandlerFunc(api.adminLeaves)))
+	mux.Handle("PATCH /api/admin/leaves/{id}/approve", api.requireAuth(http.HandlerFunc(api.approveLeave)))
+	mux.Handle("PATCH /api/admin/leaves/{id}/reject", api.requireAuth(http.HandlerFunc(api.rejectLeave)))
 	return mux
 }
 
@@ -264,6 +267,83 @@ func (api *API) adminLeaves(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"leaves": leaves})
+}
+
+func (api *API) approveLeave(w http.ResponseWriter, r *http.Request) {
+	role, ok := r.Context().Value(roleKey).(model.Role)
+	if !ok || role != model.RoleAdmin {
+		writeError(w, http.StatusForbidden, "only admins can approve leave requests")
+		return
+	}
+
+	leaveID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || leaveID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid leave request ID")
+		return
+	}
+	adminID, ok := r.Context().Value(userIDKey).(int64)
+	if !ok || adminID <= 0 {
+		writeError(w, http.StatusUnauthorized, "invalid admin")
+		return
+	}
+
+	leave, remainingBalance, err := api.store.ApproveLeave(r.Context(), leaveID, adminID)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrLeaveNotFound):
+			writeError(w, http.StatusNotFound, "leave request not found")
+		case errors.Is(err, store.ErrLeaveNotPending):
+			writeError(w, http.StatusConflict, "only pending leave requests can be approved")
+		case errors.Is(err, store.ErrInsufficientLeave):
+			writeError(w, http.StatusConflict, "employee does not have enough leave balance")
+		case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrInvalidEmployee):
+			writeError(w, http.StatusConflict, "leave request does not belong to a valid employee")
+		default:
+			log.Println(err)
+			writeError(w, http.StatusInternalServerError, "could not approve leave request")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"leave":             leave,
+		"remaining_balance": remainingBalance,
+	})
+}
+
+func (api *API) rejectLeave(w http.ResponseWriter, r *http.Request) {
+	role, ok := r.Context().Value(roleKey).(model.Role)
+	if !ok || role != model.RoleAdmin {
+		writeError(w, http.StatusForbidden, "only admins can reject leave requests")
+		return
+	}
+
+	leaveID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || leaveID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid leave request ID")
+		return
+	}
+	adminID, ok := r.Context().Value(userIDKey).(int64)
+	if !ok || adminID <= 0 {
+		writeError(w, http.StatusUnauthorized, "invalid admin")
+		return
+	}
+
+	leave, err := api.store.RejectLeave(r.Context(), leaveID, adminID)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrLeaveNotFound):
+			writeError(w, http.StatusNotFound, "leave request not found")
+		case errors.Is(err, store.ErrLeaveNotPending):
+			writeError(w, http.StatusConflict, "only pending leave requests can be rejected")
+		default:
+			log.Println(err)
+			writeError(w, http.StatusInternalServerError, "could not reject leave request")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, leave)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

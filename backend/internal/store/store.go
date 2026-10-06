@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"leave-management/internal/model"
 
@@ -16,6 +17,9 @@ var (
 	ErrEmailExists        = errors.New("email already exists")
 	ErrInsufficientLeave  = errors.New("not enough leave balance")
 	ErrOverlappingRequest = errors.New("leave dates overlap an existing request")
+	ErrLeaveNotFound      = errors.New("leave request not found")
+	ErrLeaveNotPending    = errors.New("leave request is not pending")
+	ErrInvalidEmployee    = errors.New("leave request does not belong to an employee")
 )
 
 type Store struct {
@@ -117,4 +121,80 @@ func (s *Store) PendingLeaves(ctx context.Context) ([]model.LeaveRequest, error)
 		leaves[i].BalanceAfterApproval = &balanceAfterApproval
 	}
 	return leaves, nil
+}
+
+func (s *Store) ApproveLeave(ctx context.Context, leaveID, adminID int64) (model.LeaveRequest, float64, error) {
+	var leave model.LeaveRequest
+	var remainingBalance float64
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&leave, leaveID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrLeaveNotFound
+			}
+			return err
+		}
+		if leave.Status != model.StatusPending {
+			return ErrLeaveNotPending
+		}
+
+		var employee model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&employee, leave.UserID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if employee.Role != model.RoleEmployee {
+			return ErrInvalidEmployee
+		}
+		if employee.LeaveBalance < leave.NumberOfDays {
+			return ErrInsufficientLeave
+		}
+
+		remainingBalance = employee.LeaveBalance - leave.NumberOfDays
+		if err := tx.Model(&employee).Update("leave_balance", remainingBalance).Error; err != nil {
+			return err
+		}
+
+		now := time.Now().UTC()
+		leave.Status = model.StatusApproved
+		leave.ReviewedBy = &adminID
+		leave.ReviewedAt = &now
+		return tx.Model(&leave).Updates(map[string]any{
+			"status":      model.StatusApproved,
+			"reviewed_by": adminID,
+			"reviewed_at": now,
+		}).Error
+	})
+
+	return leave, remainingBalance, err
+}
+
+func (s *Store) RejectLeave(ctx context.Context, leaveID, adminID int64) (model.LeaveRequest, error) {
+	var leave model.LeaveRequest
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&leave, leaveID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrLeaveNotFound
+			}
+			return err
+		}
+		if leave.Status != model.StatusPending {
+			return ErrLeaveNotPending
+		}
+
+		now := time.Now().UTC()
+		leave.Status = model.StatusRejected
+		leave.ReviewedBy = &adminID
+		leave.ReviewedAt = &now
+		return tx.Model(&leave).Updates(map[string]any{
+			"status":      model.StatusRejected,
+			"reviewed_by": adminID,
+			"reviewed_at": now,
+		}).Error
+	})
+
+	return leave, err
 }
