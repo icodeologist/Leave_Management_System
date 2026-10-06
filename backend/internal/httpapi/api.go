@@ -27,14 +27,17 @@ func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration) http
 	mux.HandleFunc("POST /api/auth/register", api.register)
 	mux.HandleFunc("POST /api/auth/login", api.login)
 	mux.Handle("POST /api/leaves", api.requireAuth(http.HandlerFunc(api.createLeave)))
+	mux.Handle("GET /api/leaves/my", api.requireAuth(http.HandlerFunc(api.myLeaves)))
+	mux.Handle("GET /api/admin/leaves", api.requireAuth(http.HandlerFunc(api.adminLeaves)))
 	return mux
 }
 
 func (api *API) register(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name     string `json:"name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Name     string     `json:"name"`
+		Email    string     `json:"email"`
+		Password string     `json:"password"`
+		Role     model.Role `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -46,6 +49,18 @@ func (api *API) register(w http.ResponseWriter, r *http.Request) {
 	if input.Name == "" || input.Email == "" || !strings.Contains(input.Email, "@") || len(input.Password) < 8 {
 		writeError(w, http.StatusBadRequest, "name, valid email, and password with at least 8 characters are required")
 		return
+	}
+	if input.Role == "" {
+		input.Role = model.RoleEmployee
+	}
+	if input.Role != model.RoleEmployee && input.Role != model.RoleAdmin {
+		writeError(w, http.StatusBadRequest, "role must be EMPLOYEE or ADMIN")
+		return
+	}
+
+	leaveBalance := 0.0
+	if input.Role == model.RoleEmployee {
+		leaveBalance = 20
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -59,8 +74,8 @@ func (api *API) register(w http.ResponseWriter, r *http.Request) {
 		Name:         input.Name,
 		Email:        input.Email,
 		PasswordHash: string(passwordHash),
-		Role:         model.RoleEmployee,
-		LeaveBalance: 20,
+		Role:         input.Role,
+		LeaveBalance: leaveBalance,
 	}
 	if err := api.store.CreateUser(r.Context(), &user); err != nil {
 		if errors.Is(err, store.ErrEmailExists) {
@@ -209,6 +224,46 @@ func (api *API) createLeave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, leave)
+}
+
+func (api *API) myLeaves(w http.ResponseWriter, r *http.Request) {
+	role, ok := r.Context().Value(roleKey).(model.Role)
+	if !ok || role != model.RoleEmployee {
+		writeError(w, http.StatusForbidden, "only employees can view their leave history")
+		return
+	}
+
+	userID, ok := r.Context().Value(userIDKey).(int64)
+	if !ok || userID <= 0 {
+		writeError(w, http.StatusUnauthorized, "invalid user")
+		return
+	}
+
+	leaves, err := api.store.UserLeaves(r.Context(), userID)
+	if err != nil {
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "could not fetch leave history")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"leaves": leaves})
+}
+
+func (api *API) adminLeaves(w http.ResponseWriter, r *http.Request) {
+	role, ok := r.Context().Value(roleKey).(model.Role)
+	if !ok || role != model.RoleAdmin {
+		writeError(w, http.StatusForbidden, "only admins can view pending leave requests")
+		return
+	}
+
+	leaves, err := api.store.PendingLeaves(r.Context())
+	if err != nil {
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "could not fetch pending leave requests")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"leaves": leaves})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
