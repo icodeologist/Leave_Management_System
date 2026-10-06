@@ -1,0 +1,9 @@
+.env
+.env.*
+.git
+.gitignore
+bin/
+tmp/
+cmd/api/tmp/
+*.log
+coverage.out

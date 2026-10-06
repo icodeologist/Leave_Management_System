@@ -26,6 +26,7 @@ type API struct {
 func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration, corsOrigin string) http.Handler {
 	api := &API{store: dataStore, jwtSecret: jwtSecret, jwtExpiry: jwtExpiry, corsOrigin: corsOrigin}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/health", api.health)
 	mux.HandleFunc("POST /api/auth/register", api.register)
 	mux.HandleFunc("POST /api/auth/login", api.login)
 	mux.Handle("GET /api/me", api.requireAuth(http.HandlerFunc(api.me)))
@@ -36,6 +37,10 @@ func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration, cors
 	mux.Handle("PATCH /api/admin/leaves/{id}/reject", api.requireAuth(http.HandlerFunc(api.rejectLeave)))
 	mux.Handle("GET /api/admin/dashboard", api.requireAuth(http.HandlerFunc(api.adminDashboard)))
 	return api.cors(mux)
+}
+
+func (api *API) health(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (api *API) register(w http.ResponseWriter, r *http.Request) {
