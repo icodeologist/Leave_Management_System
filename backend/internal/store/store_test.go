@@ -109,3 +109,60 @@ func TestCreateLeaveRejectsInsufficientBalance(t *testing.T) {
 		t.Fatalf("expected no leave request to be saved, got %d", saved)
 	}
 }
+
+func TestCreateLeaveCountsExistingPendingBalance(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	db, err := database.Connect(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := model.User{
+		Name:         "Pending Balance Employee",
+		Email:        "pending-balance-test-" + time.Now().Format("20060102150405.000000000") + "@example.com",
+		Role:         model.RoleEmployee,
+		LeaveBalance: 2,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Where("user_id = ?", user.ID).Delete(&model.LeaveRequest{})
+		db.Delete(&user)
+	})
+
+	store := New(db)
+	firstDate := time.Now().UTC().AddDate(0, 0, 4).Format(model.DateFormat)
+	firstLeave := model.LeaveRequest{
+		UserID:       user.ID,
+		LeaveType:    model.LeaveTypeCasual,
+		DayType:      model.DayTypeFull,
+		StartDate:    firstDate,
+		EndDate:      firstDate,
+		NumberOfDays: 2,
+		Reason:       "First pending request",
+		Status:       model.StatusPending,
+	}
+	if err := store.CreateLeave(context.Background(), &firstLeave); err != nil {
+		t.Fatalf("expected first request to be created: %v", err)
+	}
+
+	secondDate := time.Now().UTC().AddDate(0, 0, 5).Format(model.DateFormat)
+	secondLeave := model.LeaveRequest{
+		UserID:       user.ID,
+		LeaveType:    model.LeaveTypeCasual,
+		DayType:      model.DayTypeFull,
+		StartDate:    secondDate,
+		EndDate:      secondDate,
+		NumberOfDays: 1,
+		Reason:       "Second pending request",
+		Status:       model.StatusPending,
+	}
+	if err := store.CreateLeave(context.Background(), &secondLeave); !errors.Is(err, ErrInsufficientLeave) {
+		t.Fatalf("expected insufficient balance error, got %v", err)
+	}
+}
