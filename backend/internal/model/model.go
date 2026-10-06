@@ -63,3 +63,11 @@ type LeaveRequest struct {
 	ReviewedAt           *time.Time  `json:"reviewed_at,omitempty"`
 	CreatedAt            time.Time   `json:"created_at" gorm:"not null"`
 }
+
+type Dashboard struct {
+	TotalEmployees   int64 `json:"total_employees"`
+	TotalRequests    int64 `json:"total_leave_requests"`
+	PendingRequests  int64 `json:"pending_requests"`
+	ApprovedRequests int64 `json:"approved_requests"`
+	RejectedRequests int64 `json:"rejected_requests"`
+}

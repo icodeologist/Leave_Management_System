@@ -32,6 +32,7 @@ func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration) http
 	mux.Handle("GET /api/admin/leaves", api.requireAuth(http.HandlerFunc(api.adminLeaves)))
 	mux.Handle("PATCH /api/admin/leaves/{id}/approve", api.requireAuth(http.HandlerFunc(api.approveLeave)))
 	mux.Handle("PATCH /api/admin/leaves/{id}/reject", api.requireAuth(http.HandlerFunc(api.rejectLeave)))
+	mux.Handle("GET /api/admin/dashboard", api.requireAuth(http.HandlerFunc(api.adminDashboard)))
 	return mux
 }
 
@@ -344,6 +345,23 @@ func (api *API) rejectLeave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, leave)
+}
+
+func (api *API) adminDashboard(w http.ResponseWriter, r *http.Request) {
+	role, ok := r.Context().Value(roleKey).(model.Role)
+	if !ok || role != model.RoleAdmin {
+		writeError(w, http.StatusForbidden, "only admins can view the dashboard")
+		return
+	}
+
+	dashboard, err := api.store.Dashboard(r.Context())
+	if err != nil {
+		log.Println(err)
+		writeError(w, http.StatusInternalServerError, "could not fetch dashboard")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dashboard)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

@@ -198,3 +198,35 @@ func (s *Store) RejectLeave(ctx context.Context, leaveID, adminID int64) (model.
 
 	return leave, err
 }
+
+func (s *Store) Dashboard(ctx context.Context) (model.Dashboard, error) {
+	var dashboard model.Dashboard
+	db := s.db.WithContext(ctx)
+
+	if err := db.Model(&model.User{}).
+		Where("role = ?", model.RoleEmployee).
+		Count(&dashboard.TotalEmployees).Error; err != nil {
+		return dashboard, err
+	}
+	if err := db.Model(&model.LeaveRequest{}).
+		Count(&dashboard.TotalRequests).Error; err != nil {
+		return dashboard, err
+	}
+	if err := db.Model(&model.LeaveRequest{}).
+		Where("status = ?", model.StatusPending).
+		Count(&dashboard.PendingRequests).Error; err != nil {
+		return dashboard, err
+	}
+	if err := db.Model(&model.LeaveRequest{}).
+		Where("status = ?", model.StatusApproved).
+		Count(&dashboard.ApprovedRequests).Error; err != nil {
+		return dashboard, err
+	}
+	if err := db.Model(&model.LeaveRequest{}).
+		Where("status = ?", model.StatusRejected).
+		Count(&dashboard.RejectedRequests).Error; err != nil {
+		return dashboard, err
+	}
+
+	return dashboard, nil
+}
