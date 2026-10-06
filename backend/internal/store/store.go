@@ -112,6 +112,9 @@ func (s *Store) PendingLeaves(ctx context.Context) ([]model.LeaveRequest, error)
 	for i := range leaves {
 		leaves[i].EmployeeName = leaves[i].User.Name
 		leaves[i].EmployeeEmail = leaves[i].User.Email
+		leaves[i].EmployeeLeaveBalance = &leaves[i].User.LeaveBalance
+		balanceAfterApproval := leaves[i].User.LeaveBalance - leaves[i].NumberOfDays
+		leaves[i].BalanceAfterApproval = &balanceAfterApproval
 	}
 	return leaves, nil
 }

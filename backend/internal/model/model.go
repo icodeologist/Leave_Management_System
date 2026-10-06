@@ -45,19 +45,21 @@ type User struct {
 }
 
 type LeaveRequest struct {
-	ID            int64       `json:"id" gorm:"primaryKey"`
-	UserID        int64       `json:"user_id" gorm:"not null;index"`
-	User          User        `json:"-" gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
-	EmployeeName  string      `json:"employee_name,omitempty" gorm:"-"`
-	EmployeeEmail string      `json:"employee_email,omitempty" gorm:"-"`
-	LeaveType     LeaveType   `json:"leave_type" gorm:"not null;check:leave_type IN ('ANNUAL','CASUAL','SICK')"`
-	DayType       DayType     `json:"day_type" gorm:"not null;check:day_type IN ('FULL_DAY','HALF_DAY')"`
-	StartDate     string      `json:"start_date" gorm:"type:date;not null"`
-	EndDate       string      `json:"end_date" gorm:"type:date;not null"`
-	NumberOfDays  float64     `json:"number_of_days" gorm:"type:numeric(4,1);not null;check:number_of_days > 0"`
-	Reason        string      `json:"reason" gorm:"not null"`
-	Status        LeaveStatus `json:"status" gorm:"not null;default:PENDING;index;check:status IN ('PENDING','APPROVED','REJECTED')"`
-	ReviewedBy    *int64      `json:"reviewed_by,omitempty"`
-	ReviewedAt    *time.Time  `json:"reviewed_at,omitempty"`
-	CreatedAt     time.Time   `json:"created_at" gorm:"not null"`
+	ID                   int64       `json:"id" gorm:"primaryKey"`
+	UserID               int64       `json:"user_id" gorm:"not null;index"`
+	User                 User        `json:"-" gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
+	EmployeeName         string      `json:"employee_name,omitempty" gorm:"-"`
+	EmployeeEmail        string      `json:"employee_email,omitempty" gorm:"-"`
+	EmployeeLeaveBalance *float64    `json:"leave_balance,omitempty" gorm:"-"`
+	BalanceAfterApproval *float64    `json:"balance_after_approval,omitempty" gorm:"-"`
+	LeaveType            LeaveType   `json:"leave_type" gorm:"not null;check:leave_type IN ('ANNUAL','CASUAL','SICK')"`
+	DayType              DayType     `json:"day_type" gorm:"not null;check:day_type IN ('FULL_DAY','HALF_DAY')"`
+	StartDate            string      `json:"start_date" gorm:"type:date;not null"`
+	EndDate              string      `json:"end_date" gorm:"type:date;not null"`
+	NumberOfDays         float64     `json:"number_of_days" gorm:"type:numeric(4,1);not null;check:number_of_days > 0"`
+	Reason               string      `json:"reason" gorm:"not null"`
+	Status               LeaveStatus `json:"status" gorm:"not null;default:PENDING;index;check:status IN ('PENDING','APPROVED','REJECTED')"`
+	ReviewedBy           *int64      `json:"reviewed_by,omitempty"`
+	ReviewedAt           *time.Time  `json:"reviewed_at,omitempty"`
+	CreatedAt            time.Time   `json:"created_at" gorm:"not null"`
 }
