@@ -17,7 +17,8 @@ const (
 
 func (api *API) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Origin") == api.corsOrigin {
+		originAllowed := r.Header.Get("Origin") == api.corsOrigin
+		if originAllowed {
 			w.Header().Set("Access-Control-Allow-Origin", api.corsOrigin)
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
@@ -25,6 +26,9 @@ func (api *API) cors(next http.Handler) http.Handler {
 		}
 
 		if r.Method == http.MethodOptions {
+			if originAllowed {
+				w.Header().Set("Content-Length", "0")
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

@@ -17,6 +17,8 @@ type Config struct {
 	CORSOrigin  string
 }
 
+const defaultAllowedOrigin = "https://leave-management-system-denz18.vercel.app"
+
 func LoadENV() (Config, error) {
 	_ = godotenv.Load()
 
@@ -24,7 +26,7 @@ func LoadENV() (Config, error) {
 		HTTPAddr:    addressFromPort(),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		JWTSecret:   os.Getenv("JWT_SECRET"),
-		CORSOrigin:  env("ALLOWED_ORIGIN", "http://localhost:5173"),
+		CORSOrigin:  env("ALLOWED_ORIGIN", env("CORS_ORIGIN", defaultAllowedOrigin)),
 	}
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
