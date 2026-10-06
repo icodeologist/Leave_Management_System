@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -14,7 +16,9 @@ type Config struct {
 	CORSOrigin  string
 }
 
-func Load() (Config, error) {
+func LoadENV() (Config, error) {
+	_ = godotenv.Load()
+
 	c := Config{
 		HTTPAddr:    env("HTTP_ADDR", ":8080"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
