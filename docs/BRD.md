@@ -26,6 +26,8 @@ An admin needs to:
 - See leave requests from employees.
 - Review the employee, dates, reason, and requested duration.
 - Approve or reject pending requests.
+
+For the demo release, admin registration is public so a test admin can be created from the registration form. This is a temporary testing decision, not a production security model. A future release must restrict admin creation to a private setup process or an existing authorized admin.
 - See the effect of approval on the employee’s balance.
 
 ## 3. Business Rules

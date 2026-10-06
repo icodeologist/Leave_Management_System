@@ -13,6 +13,14 @@ A simple leave request system with a React frontend and Go/PostgreSQL backend.
 - Leave balance validation and overlapping-date validation.
 - Public `/api/health` endpoint for Render.
 
+### Demo admin registration
+
+For this demo, the registration form allows a user to select `ADMIN`. This is intentionally public for testing and is not safe for a production release because anyone could create an admin account.
+
+To create a test admin, open registration, enter the admin details, select `Admin`, and submit the form. Use those credentials to open the admin dashboard.
+
+In a future iteration, public admin registration must be removed. Admins should then be created by a private seed process or by an existing authorized administrator.
+
 ## Data consistency
 
 Approval uses one PostgreSQL transaction. The leave request row and employee row are locked while approval is checked and written. This prevents two admins from approving the same request or deducting the same employee balance twice. Admins can still view the dashboard at the same time; only conflicting updates are serialized.
@@ -25,29 +33,52 @@ The backend handles CORS `OPTIONS` preflight requests before authentication and 
 - Backend: Go REST API, GORM, PostgreSQL
 - Deployment: Vercel frontend, Render Docker backend and PostgreSQL
 
+## Architecture
+
+```text
+Browser
+  └─ React/Vite frontend on Vercel
+       └─ API client sends JSON requests and Bearer JWTs
+            ↓ HTTPS REST API
+Go API on Render
+  ├─ HTTP handlers: decode input, validate requests, return JSON responses
+  ├─ Auth middleware: validate JWT and attach user ID and role to request context
+  ├─ Store layer: keep GORM database operations outside the HTTP handlers
+  ├─ Auth package: bcrypt password checks and JWT creation/validation
+  └─ Database layer: open PostgreSQL connection and run GORM AutoMigrate
+            ↓ GORM
+PostgreSQL on Render
+  ├─ users
+  └─ leave_requests
+```
+
+Public routes handle health checks, registration, and login. Protected routes require a Bearer token; role checks then limit employee and admin operations. Employees can only query their own history, while admins can review and update leave requests.
+
+Leave approval locks both the leave request and employee rows inside one PostgreSQL transaction. The balance check, balance deduction, and status update either all succeed or all roll back. This prevents concurrent admin actions from approving one request twice or deducting the same balance twice.
+
 ## Run locally
 
 Requirements: Go 1.23+, PostgreSQL, Node.js, and npm.
 
-`bash
+```bash
 cp backend/.env.example backend/.env
 cd backend
 go run ./cmd/api
-`
+```
 
 Create `frontend/.env.local`:
 
-`env
+```env
 VITE_API_URL=http://localhost:8080
-`
+```
 
 Then run:
 
-`bash
+```bash
 cd frontend
 npm install
 npm run dev
-`
+```
 
 GORM creates the required tables on backend startup.
 
@@ -55,20 +86,20 @@ GORM creates the required tables on backend startup.
 
 Backend:
 
-`env
+```env
 DATABASE_URL=<PostgreSQL connection URL>
 JWT_SECRET=<at least 32 characters>
 JWT_EXPIRY=24h
 ALLOWED_ORIGIN=<exact frontend origin>
-`
+```
 
-Render supplies ` PORT `; local runs default to `8080`.
+Render supplies `PORT`; local runs default to `8080`.
 
 Frontend:
 
-`env
+```env
 VITE_API_URL=<backend URL>
-`
+```
 
 ## API
 
@@ -91,24 +122,26 @@ VITE_API_URL=<backend URL>
 
 Set the service root directory to `backend`, use `./Dockerfile`, and configure:
 
-`env
+```env
 DATABASE_URL=<Render PostgreSQL internal URL>
 JWT_SECRET=<production secret>
 JWT_EXPIRY=24h
 ALLOWED_ORIGIN=https://leave-management-system-git-main-denz18.vercel.app
-`
+```
 
 Health check path:
 
-`/api/health`
+```text
+/api/health
+```
 
 ### Vercel frontend
 
 Set:
 
-`env
+```env
 VITE_API_URL=https://leave-management-api-xh4m.onrender.com
-`
+```
 
 Live URLs:
 
