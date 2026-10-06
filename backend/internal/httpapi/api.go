@@ -279,14 +279,14 @@ func (api *API) myLeaves(w http.ResponseWriter, r *http.Request) {
 func (api *API) adminLeaves(w http.ResponseWriter, r *http.Request) {
 	role, ok := r.Context().Value(roleKey).(model.Role)
 	if !ok || role != model.RoleAdmin {
-		writeError(w, http.StatusForbidden, "only admins can view pending leave requests")
+		writeError(w, http.StatusForbidden, "only admins can view leave requests")
 		return
 	}
 
-	leaves, err := api.store.PendingLeaves(r.Context())
+	leaves, err := api.store.AdminLeaves(r.Context())
 	if err != nil {
 		log.Println(err)
-		writeError(w, http.StatusInternalServerError, "could not fetch pending leave requests")
+		writeError(w, http.StatusInternalServerError, "could not fetch leave requests")
 		return
 	}
 

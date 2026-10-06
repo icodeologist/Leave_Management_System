@@ -111,11 +111,10 @@ func (s *Store) UserLeaves(ctx context.Context, userID int64) ([]model.LeaveRequ
 	return leaves, err
 }
 
-func (s *Store) PendingLeaves(ctx context.Context) ([]model.LeaveRequest, error) {
+func (s *Store) AdminLeaves(ctx context.Context) ([]model.LeaveRequest, error) {
 	var leaves []model.LeaveRequest
 	err := s.db.WithContext(ctx).
 		Preload("User").
-		Where("status = ?", model.StatusPending).
 		Order("created_at DESC").
 		Find(&leaves).Error
 	if err != nil {

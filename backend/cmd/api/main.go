@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
+	cfg, err := config.LoadENV()
 	if err != nil {
 		log.Fatal(err)
 	}
