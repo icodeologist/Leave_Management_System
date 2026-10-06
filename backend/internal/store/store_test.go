@@ -166,3 +166,63 @@ func TestCreateLeaveCountsExistingPendingBalance(t *testing.T) {
 		t.Fatalf("expected insufficient balance error, got %v", err)
 	}
 }
+
+func TestApproveLeaveDeductsBalance(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	db, err := database.Connect(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := model.User{
+		Name:         "Approval Balance Employee",
+		Email:        "approval-balance-test-" + time.Now().Format("20060102150405.000000000") + "@example.com",
+		Role:         model.RoleEmployee,
+		LeaveBalance: 3,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Where("user_id = ?", user.ID).Delete(&model.LeaveRequest{})
+		db.Delete(&user)
+	})
+
+	date := time.Now().UTC().AddDate(0, 0, 6).Format(model.DateFormat)
+	leave := model.LeaveRequest{
+		UserID:       user.ID,
+		LeaveType:    model.LeaveTypeAnnual,
+		DayType:      model.DayTypeFull,
+		StartDate:    date,
+		EndDate:      date,
+		NumberOfDays: 2,
+		Reason:       "Approval balance test",
+		Status:       model.StatusPending,
+	}
+	if err := db.Create(&leave).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	approved, remaining, err := New(db).ApproveLeave(context.Background(), leave.ID, 999)
+	if err != nil {
+		t.Fatalf("expected approval to succeed: %v", err)
+	}
+	if approved.Status != model.StatusApproved {
+		t.Fatalf("expected status APPROVED, got %s", approved.Status)
+	}
+	if remaining != 1 {
+		t.Fatalf("expected remaining balance 1, got %v", remaining)
+	}
+
+	var updated model.User
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updated.LeaveBalance != 1 {
+		t.Fatalf("expected stored balance 1, got %v", updated.LeaveBalance)
+	}
+}
