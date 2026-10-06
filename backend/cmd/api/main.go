@@ -2,9 +2,12 @@ package main
 
 import (
 	"log"
+	"net/http"
 
 	"leave-management/internal/config"
 	"leave-management/internal/database"
+	"leave-management/internal/httpapi"
+	"leave-management/internal/store"
 )
 
 func main() {
@@ -13,10 +16,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_, err = database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("database connected")
+	dataStore := store.New(db)
+	handler := httpapi.New(dataStore, cfg.JWTSecret, cfg.JWTExpiry)
+
+	log.Println("server running on", cfg.HTTPAddr)
+	log.Fatal(http.ListenAndServe(cfg.HTTPAddr, handler))
 }
