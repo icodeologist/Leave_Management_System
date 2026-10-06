@@ -26,6 +26,7 @@ func New(dataStore *store.Store, jwtSecret string, jwtExpiry time.Duration) http
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", api.register)
 	mux.HandleFunc("POST /api/auth/login", api.login)
+	mux.Handle("POST /api/leaves", api.requireAuth(http.HandlerFunc(api.createLeave)))
 	return mux
 }
 
@@ -103,6 +104,111 @@ func (api *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": user})
+}
+
+func (api *API) createLeave(w http.ResponseWriter, r *http.Request) {
+	role, ok := r.Context().Value(roleKey).(model.Role)
+	if !ok || role != model.RoleEmployee {
+		writeError(w, http.StatusForbidden, "only employees can create leave requests")
+		return
+	}
+
+	var input struct {
+		LeaveType model.LeaveType `json:"leave_type"`
+		DayType   model.DayType   `json:"day_type"`
+		StartDate string          `json:"start_date"`
+		EndDate   string          `json:"end_date"`
+		Reason    string          `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	//TODO:  lets change it afterwards
+	if input.LeaveType != model.LeaveTypeAnnual &&
+		input.LeaveType != model.LeaveTypeCasual &&
+		input.LeaveType != model.LeaveTypeSick {
+		writeError(w, http.StatusBadRequest, "leave_type must be ANNUAL, CASUAL, or SICK")
+		return
+	}
+	if input.DayType != model.DayTypeFull && input.DayType != model.DayTypeHalf {
+		writeError(w, http.StatusBadRequest, "day_type must be FULL_DAY or HALF_DAY")
+		return
+	}
+
+	startDate, err := time.Parse(model.DateFormat, input.StartDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "start_date must use YYYY-MM-DD")
+		return
+	}
+	endDate, err := time.Parse(model.DateFormat, input.EndDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "end_date must use YYYY-MM-DD")
+		return
+	}
+	if endDate.Before(startDate) {
+		writeError(w, http.StatusBadRequest, "end_date cannot be before start_date")
+		return
+	}
+
+	todayText := time.Now().UTC().Format(model.DateFormat)
+	today, _ := time.Parse(model.DateFormat, todayText)
+	if startDate.Before(today) {
+		writeError(w, http.StatusBadRequest, "start_date cannot be in the past")
+		return
+	}
+	if startDate.Year() != today.Year() || endDate.Year() != today.Year() {
+		writeError(w, http.StatusBadRequest, "leave dates must be in the current year")
+		return
+	}
+	if input.DayType == model.DayTypeHalf && !startDate.Equal(endDate) {
+		writeError(w, http.StatusBadRequest, "half-day leave must start and end on the same date")
+		return
+	}
+
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		writeError(w, http.StatusBadRequest, "reason is required")
+		return
+	}
+
+	numberOfDays := endDate.Sub(startDate).Hours()/24 + 1
+	if input.DayType == model.DayTypeHalf {
+		numberOfDays = 0.5
+	}
+
+	userID, ok := r.Context().Value(userIDKey).(int64)
+	if !ok || userID <= 0 {
+		writeError(w, http.StatusUnauthorized, "invalid user")
+		return
+	}
+
+	leave := model.LeaveRequest{
+		UserID:       userID,
+		LeaveType:    input.LeaveType,
+		DayType:      input.DayType,
+		StartDate:    startDate.Format(model.DateFormat),
+		EndDate:      endDate.Format(model.DateFormat),
+		NumberOfDays: numberOfDays,
+		Reason:       input.Reason,
+		Status:       model.StatusPending,
+	}
+	if err := api.store.CreateLeave(r.Context(), &leave); err != nil {
+		switch {
+		case errors.Is(err, store.ErrInsufficientLeave):
+			writeError(w, http.StatusConflict, "not enough leave balance")
+		case errors.Is(err, store.ErrOverlappingRequest):
+			writeError(w, http.StatusConflict, "leave dates overlap an existing request")
+		case errors.Is(err, store.ErrNotFound):
+			writeError(w, http.StatusUnauthorized, "user not found")
+		default:
+			log.Println(err)
+			writeError(w, http.StatusInternalServerError, "could not create leave request")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, leave)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

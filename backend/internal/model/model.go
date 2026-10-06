@@ -17,13 +17,30 @@ const (
 	StatusRejected LeaveStatus = "REJECTED"
 )
 
+type LeaveType string
+
+const (
+	LeaveTypeAnnual LeaveType = "ANNUAL"
+	LeaveTypeCasual LeaveType = "CASUAL"
+	LeaveTypeSick   LeaveType = "SICK"
+)
+
+type DayType string
+
+const (
+	DayTypeFull DayType = "FULL_DAY"
+	DayTypeHalf DayType = "HALF_DAY"
+)
+
+const DateFormat = "2006-01-02"
+
 type User struct {
 	ID           int64     `json:"id" gorm:"primaryKey"`
 	Name         string    `json:"name" gorm:"not null"`
 	Email        string    `json:"email" gorm:"not null;uniqueIndex"`
 	PasswordHash string    `json:"-"`
 	Role         Role      `json:"role" gorm:"not null;index;check:role IN ('EMPLOYEE','ADMIN')"`
-	LeaveBalance int       `json:"leave_balance" gorm:"not null;check:leave_balance >= 0"`
+	LeaveBalance float64   `json:"leave_balance" gorm:"type:numeric(4,1);not null;check:leave_balance >= 0 AND leave_balance <= 20"`
 	CreatedAt    time.Time `json:"created_at" gorm:"not null"`
 }
 
@@ -31,10 +48,11 @@ type LeaveRequest struct {
 	ID           int64       `json:"id" gorm:"primaryKey"`
 	UserID       int64       `json:"user_id" gorm:"not null;index"`
 	User         User        `json:"-" gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
-	LeaveType    string      `json:"leave_type" gorm:"not null"`
-	StartDate    time.Time   `json:"start_date" gorm:"type:date;not null"`
-	EndDate      time.Time   `json:"end_date" gorm:"type:date;not null"`
-	NumberOfDays int         `json:"number_of_days" gorm:"not null;check:number_of_days > 0"`
+	LeaveType    LeaveType   `json:"leave_type" gorm:"not null;check:leave_type IN ('ANNUAL','CASUAL','SICK')"`
+	DayType      DayType     `json:"day_type" gorm:"not null;check:day_type IN ('FULL_DAY','HALF_DAY')"`
+	StartDate    string      `json:"start_date" gorm:"type:date;not null"`
+	EndDate      string      `json:"end_date" gorm:"type:date;not null"`
+	NumberOfDays float64     `json:"number_of_days" gorm:"type:numeric(4,1);not null;check:number_of_days > 0"`
 	Reason       string      `json:"reason" gorm:"not null"`
 	Status       LeaveStatus `json:"status" gorm:"not null;default:PENDING;index;check:status IN ('PENDING','APPROVED','REJECTED')"`
 	ReviewedBy   *int64      `json:"reviewed_by,omitempty"`

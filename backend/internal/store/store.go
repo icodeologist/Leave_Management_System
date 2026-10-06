@@ -8,11 +8,14 @@ import (
 	"leave-management/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
-	ErrNotFound    = errors.New("user not found")
-	ErrEmailExists = errors.New("email already exists")
+	ErrNotFound           = errors.New("user not found")
+	ErrEmailExists        = errors.New("email already exists")
+	ErrInsufficientLeave  = errors.New("not enough leave balance")
+	ErrOverlappingRequest = errors.New("leave dates overlap an existing request")
 )
 
 type Store struct {
@@ -41,4 +44,47 @@ func (s *Store) CreateUser(ctx context.Context, user *model.User) error {
 		return ErrEmailExists
 	}
 	return err
+}
+
+func (s *Store) CreateLeave(ctx context.Context, leave *model.LeaveRequest) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, leave.UserID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		var pendingRequests []model.LeaveRequest
+		if err := tx.Where("user_id = ? AND status = ?", leave.UserID, model.StatusPending).
+			Find(&pendingRequests).Error; err != nil {
+			return err
+		}
+
+		availableBalance := user.LeaveBalance
+		for _, pending := range pendingRequests {
+			availableBalance -= pending.NumberOfDays
+		}
+		if leave.NumberOfDays > availableBalance {
+			return ErrInsufficientLeave
+		}
+
+		var overlappingRequests int64
+		if err := tx.Model(&model.LeaveRequest{}).
+			Where("user_id = ? AND status IN ? AND start_date <= ? AND end_date >= ?",
+				leave.UserID,
+				[]model.LeaveStatus{model.StatusPending, model.StatusApproved},
+				leave.EndDate,
+				leave.StartDate,
+			).
+			Count(&overlappingRequests).Error; err != nil {
+			return err
+		}
+		if overlappingRequests > 0 {
+			return ErrOverlappingRequest
+		}
+
+		return tx.Create(leave).Error
+	})
 }
