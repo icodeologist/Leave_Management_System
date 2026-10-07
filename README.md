@@ -147,6 +147,7 @@ Live URLs:
 
 - Frontend: https://leave-management-system-git-main-denz18.vercel.app/
 - Backend: https://leave-management-api-xh4m.onrender.com
+  (The backend is hosted on Render, So the first request may take up little longer if the service has been inactive.Once it spins up the application should respond normally.)
 - Health: https://leave-management-api-xh4m.onrender.com/api/health
 
 For CORS, `ALLOWED_ORIGIN` must exactly match the browser origin, without a trailing slash. See [docs/BRD.md](docs/BRD.md) for the short business requirements.
